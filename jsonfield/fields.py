@@ -1,84 +1,75 @@
 from django.db import models
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import simplejson as json
+from django.utils.translation import ugettext_lazy as _
 
-try:
-	import cPickle as pickle
-except ImportError:
-	import pickle
+from django.forms.fields import Field
+from django.forms.util import ValidationError as FormValidationError
 
+class JSONFormField(Field):
+    def clean(self, value):
 
+        if not value and not self.required:
+            return None
+
+        value = super(JSONFormField, self).clean(value)
+
+        if isinstance(value, basestring):
+            try:
+                json.loads(value)
+            except ValueError:
+                raise FormValidationError(_("Enter valid JSON"))
+        return value
 
 class JSONField(models.TextField):
-    """JSONField is a generic textfield that neatly serializes/unserializes
-    JSON objects seamlessly"""
+    """JSONField is a generic textfield that serializes/unserializes JSON objects"""
 
     # Used so to_python() is called
     __metaclass__ = models.SubfieldBase
 
+    def __init__(self, *args, **kwargs):
+        self.dump_kwargs = kwargs.pop('dump_kwargs', {'cls': DjangoJSONEncoder})
+        self.load_kwargs = kwargs.pop('load_kwargs', {})
+
+        super(JSONField, self).__init__(*args, **kwargs)
+
     def to_python(self, value):
-        """Convert our string value to JSON after we load it from the DB"""
-
-        if value == "":
-            return None
-
-        try:
-            if isinstance(value, basestring):
-                return json.loads(value)
-        except ValueError:
-            pass
-
+        """Convert string value to JSON"""
+        if isinstance(value, basestring):
+            try:
+                return json.loads(value, **self.load_kwargs)
+            except ValueError:
+                pass
         return value
 
-    def get_db_prep_save(self, value, connection=None):
-        """Convert our JSON object to a string before we save"""
+    def get_db_prep_value(self, value, connection, prepared=False):
+        """Convert JSON object to a string"""
 
-        if not value or value == "":
-            return None
+        if isinstance(value, basestring):
+            return value
+        return json.dumps(value, **self.dump_kwargs)
 
-        if isinstance(value, (dict, list)):
-            value = json.dumps(value, cls=DjangoJSONEncoder)
+    def value_to_string(self, obj):
+        value = self._get_val_from_obj(obj)
+        return self.get_prep_value(value)
 
-        return super(JSONField, self).get_db_prep_save(value, connection=connection)
+    def value_from_object(self, obj):
+        return json.dumps(super(JSONField, self).value_from_object(obj))
 
+    def formfield(self, **kwargs):
 
-class PickledObject(str):
-	"""A subclass of string so it can be told whether a string is
-	   a pickled object or not (if the object is an instance of this class
-	   then it must [well, should] be a pickled one)."""
-	pass
+        if "form_class" not in kwargs:
+            kwargs["form_class"] = JSONFormField
 
-class PickledObjectField(models.Field):
-	__metaclass__ = models.SubfieldBase
-	
-	def to_python(self, value):
-		if isinstance(value, PickledObject):
-			# If the value is a definite pickle; and an error is raised in de-pickling
-			# it should be allowed to propogate.
-			return pickle.loads(str(value))
-		else:
-			try:
-				return pickle.loads(str(value))
-			except:
-				# If an error was raised, just return the plain value
-				return value
-	
-	def get_db_prep_save(self, value, connection):
-		if value is not None and not isinstance(value, PickledObject):
-			value = PickledObject(pickle.dumps(value))
-		return value
-	
-	def get_internal_type(self): 
-		return 'TextField'
-	
-	def get_db_prep_lookup(self, lookup_type, value, connection, prepared=False):
-		if lookup_type == 'exact':
-			value = self.get_db_prep_save(value, None)
-			return super(PickledObjectField, self).get_db_prep_lookup(lookup_type, value, connection,
-                            prepared)
-		elif lookup_type == 'in':
-			value = [self.get_db_prep_save(v, None) for v in value]
-			return super(PickledObjectField, self).get_db_prep_lookup(lookup_type, value, connection,
-                            prepared)
-		else:
-			raise TypeError('Lookup type %s is not supported.' % lookup_type)
+        field = super(JSONField, self).formfield(**kwargs)
+
+        if not field.help_text:
+            field.help_text = "Enter valid JSON"
+
+        return field
+
+try:
+    from south.modelsinspector import add_introspection_rules
+    add_introspection_rules([], ["^jsonfield\.fields\.JSONField"])
+except ImportError:
+    pass
