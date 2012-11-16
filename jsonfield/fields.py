@@ -6,6 +6,7 @@ from django.utils.translation import ugettext_lazy as _
 from django.forms.fields import Field
 from django.forms.util import ValidationError as FormValidationError
 
+
 class JSONFormField(Field):
     def clean(self, value):
 
@@ -21,8 +22,8 @@ class JSONFormField(Field):
                 raise FormValidationError(_("Enter valid JSON"))
         return value
 
-class JSONField(models.TextField):
-    """JSONField is a generic textfield that serializes/unserializes JSON objects"""
+
+class JSONFieldBase(models.Field):
 
     # Used so to_python() is called
     __metaclass__ = models.SubfieldBase
@@ -31,7 +32,7 @@ class JSONField(models.TextField):
         self.dump_kwargs = kwargs.pop('dump_kwargs', {'cls': DjangoJSONEncoder})
         self.load_kwargs = kwargs.pop('load_kwargs', {})
 
-        super(JSONField, self).__init__(*args, **kwargs)
+        super(JSONFieldBase, self).__init__(*args, **kwargs)
 
     def to_python(self, value):
         """Convert string value to JSON"""
@@ -47,6 +48,8 @@ class JSONField(models.TextField):
 
         if isinstance(value, basestring):
             return value
+        if self.null and value is None:
+            return None
         return json.dumps(value, **self.dump_kwargs)
 
     def value_to_string(self, obj):
@@ -54,22 +57,41 @@ class JSONField(models.TextField):
         return self.get_prep_value(value)
 
     def value_from_object(self, obj):
-        return json.dumps(super(JSONField, self).value_from_object(obj))
+        value = super(JSONFieldBase, self).value_from_object(obj)
+        if self.null and value is None:
+            return None
+        return self.dumps_for_display(value)
+
+    def dumps_for_display(self, value):
+        return json.dumps(value)
 
     def formfield(self, **kwargs):
 
         if "form_class" not in kwargs:
             kwargs["form_class"] = JSONFormField
 
-        field = super(JSONField, self).formfield(**kwargs)
+        field = super(JSONFieldBase, self).formfield(**kwargs)
 
         if not field.help_text:
             field.help_text = "Enter valid JSON"
 
         return field
 
+
+class JSONField(JSONFieldBase, models.TextField):
+    """JSONField is a generic textfield that serializes/unserializes JSON objects"""
+    def dumps_for_display(self, value):
+        return json.dumps(value, indent=2)
+
+
+class JSONCharField(JSONFieldBase, models.CharField):
+    """JSONCharField is a generic textfield that serializes/unserializes JSON objects,
+    stored in the database like a CharField, which enables it to be used
+    e.g. in unique keys"""
+
+
 try:
     from south.modelsinspector import add_introspection_rules
-    add_introspection_rules([], ["^jsonfield\.fields\.JSONField"])
+    add_introspection_rules([], ["^jsonfield\.fields\.(JSONField|JSONCharField)"])
 except ImportError:
     pass
