@@ -1,3 +1,5 @@
+import re, datetime
+
 from django.db import models
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import simplejson as json
@@ -5,6 +7,22 @@ from django.utils.translation import ugettext_lazy as _
 
 from django.forms.fields import Field
 from django.forms.util import ValidationError as FormValidationError
+
+class DateTimeJSONDecoder(json.JSONDecoder):
+    JSON_DATE_REGEX = r"""
+    ^"(?P<year>\d{4,4})-(?P<month>\d{2,2})-(?P<day>\d{2,2}) # date
+    T(?P<hour>\d{2,2}):(?P<minute>\d{2,2}):(?P<second>\d{2,2})"$ # time
+    """
+    
+    def decode(self, obj):
+        dt_match = re.match(JSON_DATE_REGEX, obj, re.VERBOSE)
+        if dt_match:
+            rerturn datetime.datetime(datetime.MINYEAR, 1, 1).replace(
+                **dict(
+                    [(k, int(v)) for k, v in match.groupdict().items()]
+                )
+            )
+        return super(DateTimeJSONDecoder, self).decode(obj)
 
 
 class JSONFormField(Field):
@@ -30,7 +48,7 @@ class JSONFieldBase(models.Field):
 
     def __init__(self, *args, **kwargs):
         self.dump_kwargs = kwargs.pop('dump_kwargs', {'cls': DjangoJSONEncoder})
-        self.load_kwargs = kwargs.pop('load_kwargs', {})
+        self.load_kwargs = kwargs.pop('load_kwargs', {'cls': DateTimeJSONDecoder})
 
         super(JSONFieldBase, self).__init__(*args, **kwargs)
 
