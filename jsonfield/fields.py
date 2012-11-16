@@ -19,7 +19,7 @@ class DateTimeJSONDecoder(json.JSONDecoder):
         if dt_match:
             return datetime.datetime(datetime.MINYEAR, 1, 1).replace(
                 **dict(
-                    [(k, int(v)) for k, v in match.groupdict().items()]
+                    [(k, int(v)) for k, v in dt_match.groupdict().items()]
                 )
             )
         return super(DateTimeJSONDecoder, self).decode(obj)
