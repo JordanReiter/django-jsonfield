@@ -45,6 +45,8 @@ class JSONFormFieldBase(object):
             try:
                 return json.loads(value, **self.load_kwargs)
             except ValueError:
+                if not re.search(r"""[\[\]\{\}'"]""", value):
+                    return value #treat as simple string
                 raise ValidationError(_("Enter valid JSON"))
         return value
 
@@ -96,6 +98,8 @@ class JSONFieldBase(six.with_metaclass(SubfieldBase, models.Field)):
                     try:
                         return json.loads(value, **self.load_kwargs)
                     except ValueError:
+                        if not re.search(r"""[\[\]\{\}'"]""", value):
+                            return value #treat as simple string
                         raise ValidationError(_("Enter valid JSON"))
 
         return value
